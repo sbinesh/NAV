@@ -1,0 +1,281 @@
+OBJECT Codeunit 50063 Update Operating Metrics
+{
+  OBJECT-PROPERTIES
+  {
+    Date=07/12/18;
+    Time=[ 5:41:39 AM];
+    Modified=Yes;
+    Version List=;
+  }
+  PROPERTIES
+  {
+    OnRun=BEGIN
+            {MESSAGE('TotalCOGS: %1\Total Sales: %2\Daily Rates: %3\DSO: %4\DPO: %5\DOH: %6',
+                    GetTotalCOGS(WORKDATE),
+                    GetTotalSales(WORKDATE),
+                    GetDailyRatefromTotalSales(WORKDATE),
+                    GetDSO(WORKDATE),
+                    GetDPO(WORKDATE),
+                    GetDOH(WORKDATE)
+                  );
+            }
+            GetOnTimeShipping;
+          END;
+
+  }
+  CODE
+  {
+    VAR
+      KeyOperatingMetrics@1000000000 : Record 50183;
+      FileManagement@1000000001 : Codeunit 419;
+
+    LOCAL PROCEDURE GetTotalCOGS@1000000003(AsOfDate@1000000001 : Date) : Decimal;
+    VAR
+      GLEntry@1000000000 : Record 17;
+      NetAmount@1000000002 : Decimal;
+    BEGIN
+      WITH GLEntry DO BEGIN
+        RESET;
+        SETFILTER("G/L Account No.",'50101|50102|50201|50202|51100|51101|51102|51103|51104|51470');
+        SETFILTER("Posting Date",'..%1',AsOfDate);
+        IF FINDSET THEN
+        REPEAT
+          NetAmount += Amount;
+        UNTIL NEXT = 0;
+      END;
+      EXIT(GetRoundValue((NetAmount)));
+    END;
+
+    LOCAL PROCEDURE GetTotalSales@1000000020(AsOfDate@1000000001 : Date) : Decimal;
+    VAR
+      GLEntry@1000000000 : Record 17;
+      NetAmount@1000000002 : Decimal;
+    BEGIN
+      WITH GLEntry DO BEGIN
+        RESET;
+        SETFILTER("G/L Account No.",'%1..%2','40000','41900');
+        SETFILTER("Posting Date",'..%1',AsOfDate);
+        IF FINDSET THEN
+        REPEAT
+          NetAmount += Amount;
+        UNTIL NEXT = 0;
+      END;
+      EXIT(-GetRoundValue((NetAmount)));
+    END;
+
+    LOCAL PROCEDURE GetDailyRatefromTotalSales@1000000033(AsOfDate@1000000001 : Date) NetAmount : Decimal;
+    VAR
+      WorkingDays@1000000000 : Integer;
+    BEGIN
+      WorkingDays := GetWorkingDays(AsOfDate);
+      IF WorkingDays = 0 THEN
+        EXIT(0);
+      EXIT(GetRoundValue((GetTotalSales(AsOfDate)/WorkingDays)));
+    END;
+
+    LOCAL PROCEDURE GetDSO@1000000037(AsOfDate@1000000001 : Date) : Decimal;
+    VAR
+      GLEntry@1000000000 : Record 17;
+      AccountsReceivable@1000000002 : Report 10040;
+      TempServerFileName@1000000003 : Text;
+    BEGIN
+      CLEAR(AccountsReceivable);
+      AccountsReceivable.USEREQUESTPAGE(FALSE);
+      AccountsReceivable.SetParam(AsOfDate);
+      TempServerFileName := FileManagement.ServerTempFileName('.pdf');
+      AccountsReceivable.SAVEASPDF(TempServerFileName);
+      FileManagement.DeleteServerFile(TempServerFileName);
+      EXIT(GetRoundValue(AccountsReceivable.GetTotalAmt/(GetTotalSales(AsOfDate)/GetNoOfDays(AsOfDate))));
+    END;
+
+    LOCAL PROCEDURE GetDPO@1000000000(AsOfDate@1000000001 : Date) : Decimal;
+    VAR
+      GLEntry@1000000000 : Record 17;
+      AgedAccountsPayable@1000000003 : Report 10085;
+      TempServerFileName@1000000004 : Text;
+    BEGIN
+      CLEAR(AgedAccountsPayable);
+      AgedAccountsPayable.USEREQUESTPAGE(FALSE);
+      AgedAccountsPayable.SetParam(AsOfDate);
+      TempServerFileName := FileManagement.ServerTempFileName('.pdf');
+      AgedAccountsPayable.SAVEASPDF(TempServerFileName);
+      FileManagement.DeleteServerFile(TempServerFileName);
+      EXIT(GetRoundValue(AgedAccountsPayable.GetTotalAmt/(GetTotalCOGS(AsOfDate)/GetDaysFromCurrentYearAsOfDate(AsOfDate))));
+    END;
+
+    LOCAL PROCEDURE GetDOH@1000000002(AsOfDate@1000000001 : Date) : Decimal;
+    VAR
+      GLEntry@1000000000 : Record 17;
+      InventoryValuation@1000000002 : Report 10139;
+      TempServerFileName@1000000003 : Text;
+    BEGIN
+      CLEAR(InventoryValuation);
+      InventoryValuation.USEREQUESTPAGE(FALSE);
+      InventoryValuation.SetParam(AsOfDate);
+      TempServerFileName := FileManagement.ServerTempFileName('.pdf');
+      InventoryValuation.SAVEASPDF(TempServerFileName);
+      FileManagement.DeleteServerFile(TempServerFileName);
+      EXIT(GetRoundValue(InventoryValuation.GetTotalAmt/(GetTotalCOGS(AsOfDate)/GetDaysFromCurrentYearAsOfDate(AsOfDate))));
+    END;
+
+    LOCAL PROCEDURE GetNoOfDays@1000000004(DateP@1000000003 : Date) : Integer;
+    VAR
+      DateL@1000000000 : Record 2000000007;
+    BEGIN
+      WITH DateL DO BEGIN
+        RESET;
+        SETRANGE("Period Type","Period Type"::Month);
+        SETFILTER("Period Start",'<=%',DateP);
+        SETFILTER("Period End", '>=%1',DateP);
+        IF FINDFIRST THEN
+          EXIT(DATE2DMY(NORMALDATE("Period End"),1));
+      END;
+    END;
+
+    LOCAL PROCEDURE GetMonthName@1000000006(DateP@1000000003 : Date) : Text;
+    VAR
+      DateL@1000000000 : Record 2000000007;
+    BEGIN
+      WITH DateL DO BEGIN
+        RESET;
+        SETRANGE("Period Type","Period Type"::Month);
+        SETFILTER("Period Start",'<=%',DateP);
+        SETFILTER("Period End", '>=%1',DateP);
+        IF FINDFIRST THEN
+          EXIT("Period Name")
+      END;
+    END;
+
+    LOCAL PROCEDURE GetYear@1000000012(DateP@1000000003 : Date) : Integer;
+    VAR
+      DateL@1000000000 : Record 2000000007;
+    BEGIN
+      WITH DateL DO BEGIN
+        RESET;
+        SETRANGE("Period Type","Period Type"::Month);
+        SETFILTER("Period Start",'<=%',DateP);
+        SETFILTER("Period End", '>=%1',DateP);
+        IF FINDFIRST THEN
+          EXIT(DATE2DMY(NORMALDATE("Period End"),3));
+      END;
+    END;
+
+    LOCAL PROCEDURE GetDaysFromCurrentYearAsOfDate@1000000015(DateP@1000000003 : Date) : Integer;
+    VAR
+      DateL@1000000000 : Record 2000000007;
+      DateL1@1000000001 : Record 2000000007;
+      DateL2@1000000002 : Record 2000000007;
+    BEGIN
+      WITH DateL DO BEGIN
+        RESET;
+        SETRANGE("Period Type","Period Type"::Month);
+        SETFILTER("Period Start",'<=%1',DateP);
+        SETFILTER("Period End", '>=%1',DateP);
+        IF FINDFIRST THEN BEGIN
+          DateL1.RESET;
+          DateL1.SETRANGE("Period Type",DateL1."Period Type"::Year);
+          DateL1.SETFILTER("Period Start",'<=%1',"Period End");
+          DateL1.SETFILTER("Period End", '>=%1',"Period End");
+          IF DateL1.FINDFIRST THEN BEGIN
+            DateL2.RESET;
+            DateL2.SETRANGE("Period Type",DateL2."Period Type"::Date);
+            DateL2.SETFILTER("Period Start",'>=%1',DateL1."Period Start");
+            DateL2.SETFILTER("Period End", '<=%1',"Period End");
+            EXIT(DateL2.COUNT);
+          END;
+        END;
+      END;
+    END;
+
+    LOCAL PROCEDURE GetWorkingDays@1000000001(DateP@1000000003 : Date) : Integer;
+    VAR
+      DateL@1000000000 : Record 2000000007;
+      Date1@1000000001 : Record 2000000007;
+      CalendarManagement@1000000005 : Codeunit 7600;
+      Description@1000000004 : Text;
+      HargerNonworkingL@1000000002 : Boolean;
+      WorkingDays@1000000006 : Integer;
+    BEGIN
+      WITH DateL DO BEGIN
+        RESET;
+        SETRANGE("Period Type","Period Type"::Month);
+        SETFILTER("Period Start",'<=%',DateP);
+        SETFILTER("Period End", '>=%1',DateP);
+        IF FINDFIRST THEN BEGIN
+          Date1.RESET;
+          Date1.SETRANGE("Period Start","Period Start","Period End");
+          Date1.SETRANGE("Period Type","Period Type"::Date);
+          IF Date1.FINDSET THEN BEGIN
+            CLEAR(WorkingDays);
+            REPEAT
+              Description := '';
+              HargerNonworkingL := CalendarManagement.CheckDateStatus('HARGER',Date1."Period Start",Description);
+              IF NOT HargerNonworkingL THEN
+                WorkingDays += 1;
+            UNTIL Date1.NEXT = 0;
+          END;
+        END;
+      END;
+      EXIT(WorkingDays);
+    END;
+
+    LOCAL PROCEDURE GetRoundValue@1000000007(ValueP@1000000000 : Decimal) : Decimal;
+    BEGIN
+      EXIT(ROUND(ValueP, 0.1, '='));
+    END;
+
+    LOCAL PROCEDURE GetOnTimeShipping@1000000005();
+    VAR
+      HargerOrderStatistics@1000000001 : Record 50007;
+      HargerOrderStatistics1@1000000003 : Record 50007;
+      SalesShipmentHeader@1000000000 : Record 110;
+      SalesShipmentLine@1000000002 : Record 111;
+    BEGIN
+      WITH HargerOrderStatistics DO BEGIN
+        RESET;
+        SETRANGE(Type,Type::Order);
+        SETFILTER("Order Date",'%1..%2',080117D,083117D);
+        FINDSET;
+        REPEAT
+          SalesShipmentHeader.RESET;
+          SalesShipmentHeader.SETCURRENTKEY("Order No.");
+          SalesShipmentHeader.SETRANGE("Order No.","Order No.");
+          IF SalesShipmentHeader.FINDSET THEN BEGIN
+            REPEAT
+              SalesShipmentLine.RESET;
+              SalesShipmentLine.SETRANGE("Document No.",SalesShipmentHeader."No.");
+              IF SalesShipmentLine.FINDSET THEN BEGIN
+                HargerOrderStatistics1.GET("Order No.");
+                REPEAT
+                  IF SalesShipmentLine."Location Code" = 'GRAYSLAKE' THEN BEGIN
+                    IF NOT HargerOrderStatistics1.Grayslake THEN BEGIN
+                      HargerOrderStatistics1.Grayslake := TRUE;
+                      HargerOrderStatistics1.MODIFY;
+                    END;
+                  END ELSE IF SalesShipmentLine."Location Code" = 'HARGER-NC' THEN BEGIN
+                    IF NOT HargerOrderStatistics1."Harger-NC" THEN BEGIN
+                      HargerOrderStatistics1."Harger-NC" := TRUE;
+                      HargerOrderStatistics1.MODIFY;
+                    END;
+                  END;
+                UNTIL SalesShipmentLine.NEXT = 0;
+              END;
+            UNTIL SalesShipmentHeader.NEXT = 0;
+          END;
+        UNTIL NEXT = 0;
+      END;
+    END;
+
+    BEGIN
+    {
+      +--------------------------------------------------------------------------------------------------------+
+      | Harger Customizations   (Development by Sbinesh Under VLC Solutions LLC.)                              |
+      +--------------------------------------------------------------------------------------------------------+
+      | Job No.     Date      Description                                                                      |
+      +--------------------------------------------------------------------------------------------------------+
+        FR          07.11.18  Added new objects Calculating the Operating Metrics for financial reports.
+    }
+    END.
+  }
+}
+
